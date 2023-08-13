@@ -1,6 +1,7 @@
 package tsreflect_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -23,8 +24,8 @@ func Example_simple() {
 
 	g.Add(typ)
 
-	fmt.Println(g.Declarations())
-	fmt.Printf("typeof x == %s", g.Type(typ))
+	fmt.Println(g.DeclarationsTypeScript())
+	fmt.Printf("typeof x == %s", g.TypeOf(typ))
 	// Output:
 	// interface MyStruct { "Number": number; "String": string; "alias": string; }
 	// typeof x == MyStruct
@@ -53,8 +54,8 @@ func Example_customTypeScriptType() {
 
 	g.Add(typ)
 
-	fmt.Println(g.Declarations())
-	fmt.Printf("typeof x == %s", g.Type(typ))
+	fmt.Println(g.DeclarationsTypeScript())
+	fmt.Printf("typeof x == %s", g.TypeOf(typ))
 	// Output:
 	// typeof x == string
 }
@@ -67,8 +68,23 @@ func ExampleWithFlatten() {
 
 	g.Add(typ)
 
-	fmt.Println(g.Declarations())
-	fmt.Printf("typeof x == %s", g.Type(typ))
+	fmt.Println(g.DeclarationsTypeScript())
+	fmt.Printf("typeof x == %s", g.TypeOf(typ))
 	// Output:
 	// typeof x == { "Number": number; "String": string; "alias": string; }
+}
+
+func ExampleWithNamer() {
+	g := tsreflect.New(tsreflect.WithNamer(tsreflect.PackageNamer))
+
+	var x json.SyntaxError
+	typ := reflect.TypeOf(x)
+
+	g.Add(typ)
+
+	fmt.Println(g.DeclarationsTypeScript())
+	fmt.Printf("typeof x == %s", g.TypeOf(typ))
+	// Output:
+	// interface EncodingJsonSyntaxError { "Offset": number; }
+	// typeof x == EncodingJsonSyntaxError
 }

@@ -1,5 +1,7 @@
 # tsreflect
 
+![Build Status](https://github.com/olahol/tsreflect/actions/workflows/test.yml/badge.svg)
+[![Codecov](https://img.shields.io/codecov/c/github/olahol/tsreflect)](https://app.codecov.io/github/olahol/tsreflect)
 [![Go Report Card](https://goreportcard.com/badge/github.com/olahol/tsreflect)](https://goreportcard.com/report/github.com/olahol/tsreflect)
 [![GoDoc](https://godoc.org/github.com/olahol/tsreflect?status.svg)](https://godoc.org/github.com/olahol/tsreflect)
 
@@ -39,8 +41,8 @@ func main() {
 
 	g.Add(typ)
 
-	fmt.Println(g.Declarations())
-	fmt.Printf("typeof x == %s", g.Type(typ))
+	fmt.Println(g.DeclarationsTypeScript())
+	fmt.Printf("typeof x == %s", g.TypeOf(typ))
 	// Output:
 	// interface MyStruct { "Number": number; "String": string; "alias": string; }
 	// typeof x == MyStruct

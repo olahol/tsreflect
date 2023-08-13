@@ -44,8 +44,17 @@ type Namer func(typ reflect.Type, isNameTaken func(name string) bool) string
 // DefaultNamer a namer function that names types sequentially (MyStruct,
 // MyStruct2, MyStruct3 ...)
 func DefaultNamer(typ reflect.Type, isNameTaken func(string) bool) string {
-	name := typ.Name()
+	return sequentialNamer(typ.Name(), isNameTaken)
+}
 
+// PackageNamer a namer function which names types with their full package path
+// (my_package.MyStruct => MyPackageMyStruct, other_package.MyStruct =>
+// OtherPackageMyStruct ...).
+func PackageNamer(typ reflect.Type, isNameTaken func(string) bool) string {
+	return sequentialNamer(pkgPathName(typ.PkgPath(), typ.Name()), isNameTaken)
+}
+
+func sequentialNamer(name string, isNameTaken func(string) bool) string {
 	if !isNameTaken(name) {
 		return name
 	}
@@ -58,22 +67,10 @@ func DefaultNamer(typ reflect.Type, isNameTaken func(string) bool) string {
 	}
 }
 
-// PackageNamer a namer function which names types with their full package path
-// (my_package.MyStruct => MyPackageMyStruct, other_package.MyStruct =>
-// OtherPackageMyStruct ...).
-func PackageNamer(typ reflect.Type, isNameTaken func(string) bool) string {
-	name := pkgPathName(typ.PkgPath(), typ.Name())
-
-	if !isNameTaken(name) {
-		return name
-	}
-
-	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s%d", name, i)
-		if !isNameTaken(candidate) {
-			return candidate
-		}
-	}
+// A Declaration is a named TypeScript type.
+type Declaration struct {
+	Name string
+	Type string
 }
 
 // A Generator is a creator of TypeScript types and declarations.
@@ -115,15 +112,18 @@ func WithNoWarnings() Option {
 	}
 }
 
-func stdLogWarning(format string, v ...any) {
-	log.Printf(format, v...)
+// WithTyper add a Typer function for `typ`.
+func WithTyper(typ reflect.Type, typer Typer) Option {
+	return func(g *Generator) {
+		g.typers[typ] = typer
+	}
 }
 
 // New create a new generator with options.
 func New(options ...Option) *Generator {
 	g := &Generator{
 		warnings: true,
-		warn:     stdLogWarning,
+		warn:     log.Printf,
 		typers: map[reflect.Type]Typer{
 			typeOfByteSlice: func(g *Generator, t reflect.Type, optional bool) string {
 				if optional {
@@ -158,25 +158,54 @@ func New(options ...Option) *Generator {
 	return g
 }
 
-// RegisterTyper register a Typer function that can give TypeScript types to
-// external types that do not implement the `TypeScriptTyper` interface.
-func (g *Generator) RegisterTyper(typ reflect.Type, typer Typer) {
-	g.typers[typ] = typer
-}
-
 // Add add a type to the generator.
 func (g *Generator) Add(typ reflect.Type) {
 	g.add(typ, nil)
 }
 
-// Type the TypeScript type for `typ`.
-func (g *Generator) Type(typ reflect.Type) string {
+// TypeOf the TypeScript type for `typ`.
+func (g *Generator) TypeOf(typ reflect.Type) string {
 	return g.typeOf(typ, false)
 }
 
-// Declarations returns the needed top-level TypeScript declarations for the
+// Declarations returns the required top-level declarations for TypeScript types
+// in this generator.
+func (g *Generator) Declarations() (ds []Declaration) {
+	names := make([]string, 0, len(g.symbols))
+	for _, name := range g.symbols {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	var sb strings.Builder
+	for _, name := range names {
+		typ := g.names[name]
+
+		if _, ok := g.circular[typ]; !ok && g.flatten {
+			continue
+		}
+
+		if g.hasCustomType(typ) {
+			continue
+		}
+
+		g.writeStructDecl(&sb, typ)
+
+		ds = append(ds, Declaration{
+			Name: name,
+			Type: sb.String(),
+		})
+
+		sb.Reset()
+	}
+
+	return
+}
+
+// DeclarationsTypeScript returns the needed top-level TypeScript declarations for the
 // types in the generator.
-func (g *Generator) Declarations() string {
+func (g *Generator) DeclarationsTypeScript() string {
 	return g.declarations(false)
 }
 
@@ -187,6 +216,10 @@ func (g *Generator) DeclarationsJSDoc() string {
 }
 
 func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
+	if typ == nil {
+		return false
+	}
+
 	if _, ok := g.types[typ]; ok {
 		return typ == parent
 	}
@@ -243,6 +276,10 @@ func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
 }
 
 func (g *Generator) typeOf(typ reflect.Type, optional bool) string {
+	if typ == nil {
+		return "any"
+	}
+
 	if typ.Implements(typeOfTypeScriptTyper) {
 		t := reflect.New(typ).Elem().Interface().(TypeScriptTyper)
 		return t.TypeScriptType(g, optional)
@@ -308,59 +345,21 @@ func (g *Generator) typeOf(typ reflect.Type, optional bool) string {
 	}
 }
 
-type decl struct {
-	name string
-	typ  string
-}
-
-func (g *Generator) decls() (ds []decl) {
-	names := make([]string, 0, len(g.symbols))
-	for _, name := range g.symbols {
-		names = append(names, name)
-	}
-
-	sort.Strings(names)
-
-	var sb strings.Builder
-	for _, name := range names {
-		typ := g.names[name]
-
-		if _, ok := g.circular[typ]; !ok && g.flatten {
-			continue
-		}
-
-		if g.hasCustomType(typ) {
-			continue
-		}
-
-		g.writeStructDecl(&sb, typ)
-
-		ds = append(ds, decl{
-			name: name,
-			typ:  sb.String(),
-		})
-
-		sb.Reset()
-	}
-
-	return
-}
-
 func (g *Generator) declarations(jsDoc bool) string {
 	var sb strings.Builder
 
-	decls := g.decls()
+	decls := g.Declarations()
 	for i, decl := range decls {
 		if jsDoc {
 			sb.WriteString("/** @typedef {")
 		} else {
-			sb.WriteString(fmt.Sprintf("interface %s ", decl.name))
+			sb.WriteString(fmt.Sprintf("interface %s ", decl.Name))
 		}
 
-		sb.WriteString(decl.typ)
+		sb.WriteString(decl.Type)
 
 		if jsDoc {
-			sb.WriteString(fmt.Sprintf("} %s */", decl.name))
+			sb.WriteString(fmt.Sprintf("} %s */", decl.Name))
 		}
 
 		if i < len(decls)-1 {
@@ -410,10 +409,6 @@ func (g *Generator) structField(f reflect.StructField) string {
 
 	var typ string
 	if tag, ok := f.Tag.Lookup("json"); ok {
-		if tag == "-" {
-			return ""
-		}
-
 		if !strings.ContainsRune(tag, ',') {
 			name = tag
 		} else {

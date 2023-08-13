@@ -37,15 +37,19 @@ func AssertEqual[T comparable](t *testing.T, a, b T) {
 
 func programOfGenerator[T any](g *Generator, v T) (string, error) {
 	typ := reflect.TypeOf(v)
-	decls := g.Declarations()
-	typing := g.Type(typ)
+	decls := g.DeclarationsTypeScript()
+	typing := g.TypeOf(typ)
 
 	value, err := json.Marshal(v)
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("%sconst test: %s = %s", decls, typing, value), nil
+	if decls == "" {
+		return fmt.Sprintf("const test: %s = %s", typing, value), nil
+	}
+
+	return fmt.Sprintf("%s\nconst test: %s = %s", decls, typing, value), nil
 }
 
 func programOfValue[T any](v T, os ...Option) (string, error) {
@@ -92,6 +96,24 @@ func typecheckValue[T any](v T, os ...Option) error {
 func TestBool(t *testing.T) {
 	t.Run("bool", func(t *testing.T) {
 		x := true
+
+		AssertNoError(t, typecheckValue(x))
+	})
+}
+
+func TestInterface(t *testing.T) {
+	t.Run("reflect.Interface", func(t *testing.T) {
+		type S struct {
+			A interface{}
+		}
+
+		var x S
+
+		AssertNoError(t, typecheckValue(x))
+	})
+
+	t.Run("nil", func(t *testing.T) {
+		var x interface{}
 
 		AssertNoError(t, typecheckValue(x))
 	})
@@ -544,6 +566,22 @@ func TestCustomTypes(t *testing.T) {
 
 		AssertNoError(t, typecheckValue(x))
 	})
+
+	t.Run("with typer", func(t *testing.T) {
+		type S struct {
+			A string
+		}
+
+		var x S
+
+		typ := reflect.TypeOf(x)
+
+		AssertNoError(t, typecheckValue(x, WithTyper(typ, func(g *Generator, typ reflect.Type, optional bool) string {
+			return "Record<string, string>"
+		})))
+
+		AssertNoError(t, typecheckValue(x))
+	})
 }
 
 func TestBuiltin(t *testing.T) {
@@ -571,6 +609,158 @@ func TestBuiltin(t *testing.T) {
 		x := big.NewInt(99)
 
 		AssertNoError(t, typecheckValue(x))
+	})
+}
+
+type Marshaled struct {
+	A int
+}
+
+func (Marshaled) MarshalJSON() ([]byte, error) {
+	return []byte("string"), nil
+}
+
+func TestWarning(t *testing.T) {
+	t.Run("should warn of missing typer", func(t *testing.T) {
+		var x Marshaled
+
+		g := New()
+		typ := reflect.TypeOf(x)
+
+		var called bool
+		g.warn = func(s string, a ...any) {
+			called = true
+		}
+
+		g.Add(typ)
+		g.TypeOf(typ)
+
+		AssertEqual(t, called, true)
+	})
+
+	t.Run("should not warn of missing typer", func(t *testing.T) {
+		var x Marshaled
+
+		g := New(WithNoWarnings())
+		typ := reflect.TypeOf(x)
+
+		var called bool
+		g.warn = func(s string, a ...any) {
+			called = true
+		}
+
+		g.Add(typ)
+		g.TypeOf(typ)
+
+		AssertEqual(t, called, false)
+	})
+}
+
+func TestNamer(t *testing.T) {
+	t.Run("camel case", func(t *testing.T) {
+		AssertEqual(t, pascalCase("domain.name"), "DomainName")
+		AssertEqual(t, pascalCase("snake_case"), "SnakeCase")
+		AssertEqual(t, pascalCase("kebab-case"), "KebabCase")
+		AssertEqual(t, pascalCase("camelCase"), "CamelCase")
+		AssertEqual(t, pascalCase("PascalCase"), "PascalCase")
+		AssertEqual(t, pascalCase("Space Name"), "SpaceName")
+		AssertEqual(t, pascalCase("path/Case/Name"), "Path/Case/Name")
+		AssertEqual(t, pascalCase("mixed_case-name"), "MixedCaseName")
+		AssertEqual(t, pascalCase("mixed case-name"), "MixedCaseName")
+		AssertEqual(t, pascalCase("mixed.case___name.kebab-----case..com"), "MixedCaseNameKebabCaseCom")
+		AssertEqual(t, pascalCase(".."), "")
+		AssertEqual(t, pascalCase("..relativeName"), "RelativeName")
+	})
+
+	t.Run("package path name", func(t *testing.T) {
+		AssertEqual(t, pkgPathName("github.com/olahol/tsreflect", "Generator"), "OlaholTsreflectGenerator")
+		AssertEqual(t, pkgPathName("github.com/shopspring/decimal", "Decimal"), "ShopspringDecimalDecimal")
+		AssertEqual(t, pkgPathName("encoding/json", "Decoder"), "EncodingJsonDecoder")
+		AssertEqual(t, pkgPathName("../test", "Struct"), "TestStruct")
+		AssertEqual(t, pkgPathName("snake_case", "Struct_Name"), "SnakeCaseStruct_Name")
+		AssertEqual(t, pkgPathName("empty//part", "Name"), "EmptyPartName")
+		AssertEqual(t, pkgPathName("", "Name"), "Name")
+	})
+}
+
+func TestCoverage(t *testing.T) {
+	t.Run("optional byte slice", func(t *testing.T) {
+		type S struct {
+			A []byte `json:",omitempty"`
+		}
+
+		var x S
+
+		AssertNoError(t, typecheckValue(x))
+	})
+
+	t.Run("optional bigint", func(t *testing.T) {
+		type S struct {
+			A *big.Int `json:",omitempty"`
+		}
+
+		var x S
+
+		AssertNoError(t, typecheckValue(x))
+	})
+
+	t.Run("jsdoc declarations", func(t *testing.T) {
+		type S struct {
+			A string `json:"a"`
+		}
+
+		var x S
+
+		g := New()
+		g.Add(reflect.TypeOf(x))
+
+		AssertEqual(t, g.DeclarationsJSDoc(), `/** @typedef {{ "a": string; }} S */`)
+	})
+
+	t.Run("bad namer", func(t *testing.T) {
+		defer func() {
+			recover()
+		}()
+
+		type S1 struct {
+			A string `json:"a"`
+		}
+
+		type S2 struct {
+			A string `json:"a"`
+		}
+
+		var x S1
+		var y S2
+
+		g := New(WithNamer(func(typ reflect.Type, isNameTaken func(name string) bool) string {
+			return "Name"
+		}))
+		g.Add(reflect.TypeOf(x))
+		g.Add(reflect.TypeOf(y))
+	})
+
+	t.Run("bad namer", func(t *testing.T) {
+		defer func() {
+			recover()
+		}()
+
+		type S1 struct {
+			A string `json:"a"`
+		}
+
+		type S2 struct {
+			A string `json:"a"`
+		}
+
+		var x S1
+		var y S2
+
+		g := New(WithNamer(func(typ reflect.Type, isNameTaken func(name string) bool) string {
+			return "Name"
+		}))
+		g.Add(reflect.TypeOf(x))
+		g.Add(reflect.TypeOf(y))
 	})
 }
 
@@ -616,75 +806,6 @@ func TestBugs(t *testing.T) {
 		g := New()
 		g.Add(reflect.TypeOf(x))
 
-		AssertEqual(t, g.Declarations(), "")
-	})
-}
-
-type Marshaled struct {
-	A int
-}
-
-func (Marshaled) MarshalJSON() ([]byte, error) {
-	return []byte("string"), nil
-}
-
-func TestWarning(t *testing.T) {
-	t.Run("should warn of missing typer", func(t *testing.T) {
-		var x Marshaled
-
-		g := New()
-		typ := reflect.TypeOf(x)
-
-		var called bool
-		g.warn = func(s string, a ...any) {
-			called = true
-		}
-
-		g.Add(typ)
-		g.Type(typ)
-
-		AssertEqual(t, called, true)
-	})
-
-	t.Run("should not warn of missing typer", func(t *testing.T) {
-		var x Marshaled
-
-		g := New(WithNoWarnings())
-		typ := reflect.TypeOf(x)
-
-		var called bool
-		g.warn = func(s string, a ...any) {
-			called = true
-		}
-
-		g.Add(typ)
-		g.Type(typ)
-
-		AssertEqual(t, called, false)
-	})
-}
-
-func TestNamer(t *testing.T) {
-	t.Run("camel case", func(t *testing.T) {
-		AssertEqual(t, pascalCase("domain.name"), "DomainName")
-		AssertEqual(t, pascalCase("snake_case"), "SnakeCase")
-		AssertEqual(t, pascalCase("kebab-case"), "KebabCase")
-		AssertEqual(t, pascalCase("camelCase"), "CamelCase")
-		AssertEqual(t, pascalCase("PascalCase"), "PascalCase")
-		AssertEqual(t, pascalCase("Space Name"), "SpaceName")
-		AssertEqual(t, pascalCase("path/Case/Name"), "Path/Case/Name")
-		AssertEqual(t, pascalCase("mixed_case-name"), "MixedCaseName")
-		AssertEqual(t, pascalCase("mixed case-name"), "MixedCaseName")
-		AssertEqual(t, pascalCase("mixed.case___name.kebab-----case..com"), "MixedCaseNameKebabCaseCom")
-		AssertEqual(t, pascalCase(".."), "")
-		AssertEqual(t, pascalCase("..relativeName"), "RelativeName")
-	})
-
-	t.Run("package path name", func(t *testing.T) {
-		AssertEqual(t, pkgPathName("github.com/olahol/tsreflect", "Generator"), "OlaholTsreflectGenerator")
-		AssertEqual(t, pkgPathName("github.com/shopspring/decimal", "Decimal"), "ShopspringDecimalDecimal")
-		AssertEqual(t, pkgPathName("encoding/json", "Decoder"), "EncodingJsonDecoder")
-		AssertEqual(t, pkgPathName("../test", "Struct"), "TestStruct")
-		AssertEqual(t, pkgPathName("snake_case", "Struct_Name"), "SnakeCaseStruct_Name")
+		AssertEqual(t, g.DeclarationsTypeScript(), "")
 	})
 }
