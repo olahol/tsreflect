@@ -41,10 +41,12 @@ func main() {
 
 	g.Add(typ)
 
+	value, _ := json.Marshal(x)
+
 	fmt.Println(g.DeclarationsTypeScript())
-	fmt.Printf("typeof x == %s", g.TypeOf(typ))
+	fmt.Printf("const x: %s = %s", g.TypeOf(typ), value)
 	// Output:
 	// interface MyStruct { "Number": number; "String": string; "alias": string; }
-	// typeof x == MyStruct
+	// const x: MyStruct = {"Number":0,"String":"0","alias":""}
 }
 ```
