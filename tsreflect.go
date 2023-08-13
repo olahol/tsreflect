@@ -1,5 +1,5 @@
 // Package tsreflect implements a reflection based TypeScript type generator
-// for types that can be marshaled with encoding/json.
+// for types that can be marshaled by encoding/json.
 package tsreflect
 
 import (
@@ -30,26 +30,22 @@ type TypeScriptTyper interface {
 	TypeScriptType(g *Generator, optional bool) string
 }
 
-// Typer is a function that can serialize types in to valid TypeScript types.
+// A Typer is a function that can serialize types into valid TypeScript types.
 // The `optional` flag is used for when a type is part of an optional field in
 // an object.
-//
-// Used for giving TypeScript types to external types that implement custom json
-// marshaling.
 type Typer func(g *Generator, typ reflect.Type, optional bool) string
 
-// Namer is a function that gives names to TypeScript types in a generator.
+// A Namer is a function that gives names to TypeScript types in a generator.
 type Namer func(typ reflect.Type, isNameTaken func(name string) bool) string
 
-// DefaultNamer a namer function that names types sequentially (MyStruct,
-// MyStruct2, MyStruct3 ...)
+// DefaultNamer is a namer function that names conflicting types
+// sequentially (i.e MyStruct, MyStruct2, MyStruct3 ...)
 func DefaultNamer(typ reflect.Type, isNameTaken func(string) bool) string {
 	return sequentialNamer(typ.Name(), isNameTaken)
 }
 
-// PackageNamer a namer function which names types with their full package path
-// (my_package.MyStruct => MyPackageMyStruct, other_package.MyStruct =>
-// OtherPackageMyStruct ...).
+// PackageNamer is a namer function which names types with their full package
+// path (i.e MyPackageMyStruct, OtherPackageMyStruct ...)
 func PackageNamer(typ reflect.Type, isNameTaken func(string) bool) string {
 	return sequentialNamer(pkgPathName(typ.PkgPath(), typ.Name()), isNameTaken)
 }
@@ -73,7 +69,8 @@ type Declaration struct {
 	Type string
 }
 
-// A Generator is a creator of TypeScript types and declarations.
+// A Generator is a generator of TypeScript types and declarations for Go types
+// that can be marshaled with `encoding/json`.
 type Generator struct {
 	flatten  bool
 	warnings bool
@@ -87,18 +84,18 @@ type Generator struct {
 	names    map[string]reflect.Type
 }
 
-// Option is a generator option.
+// An Option is a generator option.
 type Option func(*Generator)
 
-// WithNamer sets the namer of the generator.
+// WithNamer sets the namer function of the generator.
 func WithNamer(namer Namer) Option {
 	return func(g *Generator) {
 		g.namer = namer
 	}
 }
 
-// WithFlatten flatten output types, minimizing the amount of top-level
-// declarations needed.
+// WithFlatten makes the generator flatten output types, minimizing the number
+// of required top-level declarations.
 func WithFlatten() Option {
 	return func(g *Generator) {
 		g.flatten = true
@@ -112,7 +109,9 @@ func WithNoWarnings() Option {
 	}
 }
 
-// WithTyper add a Typer function for `typ`.
+// WithTyper adds a Typer function for `typ`. This is needed for external types
+// that have custom MarshalJSON methods but do not implement the TypeScriptTyper
+// interface.
 func WithTyper(typ reflect.Type, typer Typer) Option {
 	return func(g *Generator) {
 		g.typers[typ] = typer
@@ -163,13 +162,13 @@ func (g *Generator) Add(typ reflect.Type) {
 	g.add(typ, nil)
 }
 
-// TypeOf the TypeScript type for `typ`.
+// TypeOf returns the TypeScript type for `typ`.
 func (g *Generator) TypeOf(typ reflect.Type) string {
 	return g.typeOf(typ, false)
 }
 
-// Declarations returns the required top-level declarations for TypeScript types
-// in this generator.
+// Declarations returns the required top-level declarations for the TypeScript
+// types in the generator.
 func (g *Generator) Declarations() (ds []Declaration) {
 	names := make([]string, 0, len(g.symbols))
 	for _, name := range g.symbols {
@@ -203,14 +202,14 @@ func (g *Generator) Declarations() (ds []Declaration) {
 	return
 }
 
-// DeclarationsTypeScript returns the needed top-level TypeScript declarations for the
-// types in the generator.
+// DeclarationsTypeScript returns the required top-level declarations for the
+// TypeScript types in the generator as a TypeScript string.
 func (g *Generator) DeclarationsTypeScript() string {
 	return g.declarations(false)
 }
 
-// DeclarationsJSDoc returns the needed top-level JSDoc declarations for the
-// types in the generator.
+// DeclarationsJSDoc returns the required top-level declarations for the
+// TypeScript types in the generator as a JSDoc string.
 func (g *Generator) DeclarationsJSDoc() string {
 	return g.declarations(true)
 }

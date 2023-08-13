@@ -24,11 +24,13 @@ func Example_simple() {
 
 	g.Add(typ)
 
+	value, _ := json.Marshal(x)
+
 	fmt.Println(g.DeclarationsTypeScript())
-	fmt.Printf("typeof x == %s", g.TypeOf(typ))
+	fmt.Printf("const x: %s = %s", g.TypeOf(typ), value)
 	// Output:
 	// interface MyStruct { "Number": number; "String": string; "alias": string; }
-	// typeof x == MyStruct
+	// const x: MyStruct = {"Number":0,"String":"0","alias":""}
 }
 
 type MyCustomStruct struct {
@@ -38,7 +40,7 @@ type MyCustomStruct struct {
 }
 
 func (s MyCustomStruct) MarshalJSON() ([]byte, error) {
-	return []byte(strings.Join([]string{s.A, s.B, s.C}, ",")), nil
+	return []byte(fmt.Sprintf("%q", strings.Join([]string{s.A, s.B, s.C}, ","))), nil
 }
 
 // TypeScriptType(g *Generator, optional bool) string
@@ -49,15 +51,21 @@ func (s MyCustomStruct) TypeScriptType(*tsreflect.Generator, bool) string {
 func Example_customTypeScriptType() {
 	g := tsreflect.New()
 
-	var x MyCustomStruct
+	x := MyCustomStruct{
+		A: "1",
+		B: "2",
+		C: "3",
+	}
 	typ := reflect.TypeOf(x)
 
 	g.Add(typ)
 
+	value, _ := json.Marshal(x)
+
 	fmt.Println(g.DeclarationsTypeScript())
-	fmt.Printf("typeof x == %s", g.TypeOf(typ))
+	fmt.Printf("const x: %s = %s", g.TypeOf(typ), value)
 	// Output:
-	// typeof x == string
+	// const x: string = "1,2,3"
 }
 
 func ExampleWithFlatten() {
@@ -68,10 +76,12 @@ func ExampleWithFlatten() {
 
 	g.Add(typ)
 
+	value, _ := json.Marshal(x)
+
 	fmt.Println(g.DeclarationsTypeScript())
-	fmt.Printf("typeof x == %s", g.TypeOf(typ))
+	fmt.Printf("const x: %s = %s", g.TypeOf(typ), value)
 	// Output:
-	// typeof x == { "Number": number; "String": string; "alias": string; }
+	// const x: { "Number": number; "String": string; "alias": string; } = {"Number":0,"String":"0","alias":""}
 }
 
 func ExampleWithNamer() {
@@ -82,9 +92,11 @@ func ExampleWithNamer() {
 
 	g.Add(typ)
 
+	value, _ := json.Marshal(x)
+
 	fmt.Println(g.DeclarationsTypeScript())
-	fmt.Printf("typeof x == %s", g.TypeOf(typ))
+	fmt.Printf("const x: %s = %s", g.TypeOf(typ), value)
 	// Output:
 	// interface EncodingJsonSyntaxError { "Offset": number; }
-	// typeof x == EncodingJsonSyntaxError
+	// const x: EncodingJsonSyntaxError = {"Offset":0}
 }
