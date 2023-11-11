@@ -764,6 +764,16 @@ func TestCoverage(t *testing.T) {
 	})
 }
 
+type Date time.Time
+
+func (d Date) MarshalJSON() ([]byte, error) {
+	return time.Time(d).MarshalJSON()
+}
+
+func (Date) TypeScriptType(g *Generator, optional bool) string {
+	return "Date"
+}
+
 func TestBugs(t *testing.T) {
 	t.Run("omitted fields should not create semicolons", func(t *testing.T) {
 		type S struct {
@@ -807,5 +817,25 @@ func TestBugs(t *testing.T) {
 		g.Add(reflect.TypeOf(x))
 
 		AssertEqual(t, g.DeclarationsTypeScript(), "")
+	})
+
+	t.Run("should not declare empty types", func(t *testing.T) {
+		var x time.Time
+
+		g := New()
+		g.Add(reflect.TypeOf(x))
+
+		AssertEqual(t, g.DeclarationsTypeScript(), "")
+	})
+
+	t.Run("should handle automatic dereferencing and interfaces", func(t *testing.T) {
+		var x *Date
+
+		typ := reflect.TypeOf(x)
+
+		g := New()
+		g.Add(typ)
+
+		AssertEqual(t, "(Date | null)", g.TypeOf(typ))
 	})
 }

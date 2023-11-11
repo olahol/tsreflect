@@ -274,12 +274,20 @@ func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
 	}
 }
 
+func hasInterface(u reflect.Type, typ reflect.Type) bool {
+	if typ.Kind() == reflect.Pointer && typ.Implements(u) {
+		return !typ.Elem().Implements(u)
+	}
+
+	return typ.Implements(u)
+}
+
 func (g *Generator) typeOf(typ reflect.Type, optional bool) string {
 	if typ == nil {
 		return "any"
 	}
 
-	if typ.Implements(typeOfTypeScriptTyper) {
+	if hasInterface(typeOfTypeScriptTyper, typ) {
 		t := reflect.New(typ).Elem().Interface().(TypeScriptTyper)
 		return t.TypeScriptType(g, optional)
 	}
@@ -288,7 +296,7 @@ func (g *Generator) typeOf(typ reflect.Type, optional bool) string {
 		return typer(g, typ, optional)
 	}
 
-	if typ.Implements(typeOfMarshaler) && g.warnings {
+	if hasInterface(typeOfMarshaler, typ) && g.warnings {
 		g.warn("tsreflect: WARNING json.Marshaler implemented for type %q but no corresponding typer could be found.", typ.Name())
 	}
 
@@ -462,7 +470,7 @@ func countExportedFields(typ reflect.Type) int {
 func (g *Generator) hasCustomType(typ reflect.Type) bool {
 	_, ok := g.typers[typ]
 
-	return ok || typ.Implements(typeOfTypeScriptTyper)
+	return ok || hasInterface(typeOfTypeScriptTyper, typ)
 }
 
 func (g *Generator) isNameTaken(name string) bool {
