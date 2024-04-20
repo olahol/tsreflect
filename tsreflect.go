@@ -510,8 +510,16 @@ func (g *Generator) writeStructFields(sb *strings.Builder, typ reflect.Type) {
 }
 
 func hasTagOmit(f reflect.StructField) bool {
-	if tag, ok := f.Tag.Lookup("json"); ok && tag == "-" {
+	jsonTagFound := false
+	var tag string
+	if tag, jsonTagFound = f.Tag.Lookup("json"); jsonTagFound && tag == "-" {
 		return true
+	}
+
+	if !jsonTagFound {
+		if tag, ok := f.Tag.Lookup("yaml"); ok && tag == "-" {
+			return true
+		}
 	}
 
 	return false
@@ -522,7 +530,17 @@ func (g *Generator) structField(f reflect.StructField) string {
 	omit := false
 
 	var typ string
-	if tag, ok := f.Tag.Lookup("json"); ok {
+	var tag string
+
+	if jsonTag, ok := f.Tag.Lookup("json"); ok {
+		tag = jsonTag
+	}
+
+	if yamlTag, ok := f.Tag.Lookup("yaml"); ok && tag == "" {
+		tag = yamlTag
+	}
+
+	if tag != "" {
 		if !strings.ContainsRune(tag, ',') {
 			name = tag
 		} else {
