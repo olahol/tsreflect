@@ -185,7 +185,6 @@ func (g *Generator) AddFunc(typ reflect.Type, name string, async bool, implement
 	} else if len(implementation) == 1 {
 		impl = implementation[0]
 	}
-	println("adding function ", name)
 	g.add(typ, nil, name, async, impl)
 }
 
