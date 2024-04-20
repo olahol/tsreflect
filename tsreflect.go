@@ -21,6 +21,7 @@ var (
 	typeOfByteSlice       = reflect.TypeOf([]byte{})
 	typeOfTime            = reflect.TypeOf(time.Time{})
 	typeOfBigInt          = reflect.TypeOf(big.NewInt(0))
+	typeOfError           = reflect.TypeOf((*error)(nil)).Elem()
 )
 
 // TypeScriptTyper is the interface implemented by types that can serialize
@@ -65,8 +66,9 @@ func sequentialNamer(name string, isNameTaken func(string) bool) string {
 
 // A Declaration is a named TypeScript type.
 type Declaration struct {
-	Name string
-	Type string
+	Name       string
+	Type       string
+	IsFunction bool
 }
 
 // A Generator is a generator of TypeScript types and declarations for Go types
@@ -76,12 +78,17 @@ type Generator struct {
 	warnings bool
 	warn     func(string, ...any)
 	namer    Namer
+	export   bool
 
 	typers   map[reflect.Type]Typer
 	types    map[reflect.Type]struct{}
 	circular map[reflect.Type]struct{}
 	symbols  map[reflect.Type]string
 	names    map[string]reflect.Type
+	// implemenations stores user-supplied code that implements a given function
+	implementations map[string]string
+	// async stores which functions are asynchronous
+	async map[string]bool
 }
 
 // An Option is a generator option.
@@ -118,6 +125,13 @@ func WithTyper(typ reflect.Type, typer Typer) Option {
 	}
 }
 
+// ExportEverything adds an option that makes export all generated types
+func ExportEverything() Option {
+	return func(g *Generator) {
+		g.export = true
+	}
+}
+
 // New create a new generator with options.
 func New(options ...Option) *Generator {
 	g := &Generator{
@@ -142,10 +156,12 @@ func New(options ...Option) *Generator {
 				return "(number | null)"
 			},
 		},
-		types:    make(map[reflect.Type]struct{}),
-		circular: make(map[reflect.Type]struct{}),
-		symbols:  make(map[reflect.Type]string),
-		names:    make(map[string]reflect.Type),
+		types:           make(map[reflect.Type]struct{}),
+		circular:        make(map[reflect.Type]struct{}),
+		symbols:         make(map[reflect.Type]string),
+		implementations: make(map[string]string),
+		async:           make(map[string]bool),
+		names:           make(map[string]reflect.Type),
 	}
 
 	g.namer = DefaultNamer
@@ -159,7 +175,17 @@ func New(options ...Option) *Generator {
 
 // Add add a type to the generator.
 func (g *Generator) Add(typ reflect.Type) {
-	g.add(typ, nil)
+	g.add(typ, nil, "", false, "")
+}
+
+func (g *Generator) AddFunc(typ reflect.Type, name string, async bool, implementation ...string) {
+	impl := ""
+	if len(implementation) > 1 {
+		panic("tsreflect: too many implementations")
+	} else if len(implementation) == 1 {
+		impl = implementation[0]
+	}
+	g.add(typ, nil, name, async, impl)
 }
 
 // TypeOf returns the TypeScript type for `typ`.
@@ -173,6 +199,11 @@ func (g *Generator) Declarations() (ds []Declaration) {
 	names := make([]string, 0, len(g.symbols))
 	for _, name := range g.symbols {
 		names = append(names, name)
+	}
+	for name, typ := range g.names {
+		if typ.Kind() == reflect.Func {
+			names = append(names, name)
+		}
 	}
 
 	sort.Strings(names)
@@ -189,11 +220,17 @@ func (g *Generator) Declarations() (ds []Declaration) {
 			continue
 		}
 
-		g.writeStructDecl(&sb, typ)
+		if typ.Kind() == reflect.Func {
+			name = strings.ToLower(name[0:1]) + name[1:]
+			g.writeFuncDecl(&sb, typ, g.async[name], g.implementations[name])
+		} else {
+			g.writeStructDecl(&sb, typ)
+		}
 
 		ds = append(ds, Declaration{
-			Name: name,
-			Type: sb.String(),
+			Name:       name,
+			Type:       sb.String(),
+			IsFunction: typ.Kind() == reflect.Func,
 		})
 
 		sb.Reset()
@@ -214,12 +251,12 @@ func (g *Generator) DeclarationsJSDoc() string {
 	return g.declarations(true)
 }
 
-func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
+func (g *Generator) add(typ reflect.Type, parent reflect.Type, name string, async bool, implementation string) bool {
 	if typ == nil {
 		return false
 	}
 
-	if _, ok := g.types[typ]; ok {
+	if _, ok := g.types[typ]; ok && (typ.Kind() != reflect.Func) {
 		return typ == parent
 	}
 
@@ -227,13 +264,17 @@ func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
 
 	switch typ.Kind() {
 	case reflect.Array:
-		return g.add(typ.Elem(), parent)
+		return g.add(typ.Elem(), parent, name, async, implementation)
 	case reflect.Slice:
-		return g.add(typ.Elem(), parent)
+		return g.add(typ.Elem(), parent, name, async, implementation)
 	case reflect.Map:
-		return g.add(typ.Key(), parent) || g.add(typ.Elem(), parent)
+		return g.add(typ.Key(), parent, name, async, implementation) || g.add(typ.Elem(), parent, name, async, implementation)
 	case reflect.Pointer:
-		return g.add(typ.Elem(), parent)
+		return g.add(typ.Elem(), parent, name, async, implementation)
+	case reflect.Func:
+		g.names[name] = typ
+		g.async[name] = async
+		g.implementations[name] = implementation
 	case reflect.Struct:
 		hasName := typ.Name() != ""
 		hasExportedFields := countExportedFields(typ) > 0
@@ -247,9 +288,9 @@ func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
 			}
 
 			if hasName {
-				isCircular = isCircular || g.add(f.Type, typ)
+				isCircular = isCircular || g.add(f.Type, typ, f.Name, false, "")
 			} else {
-				isCircular = isCircular || g.add(f.Type, parent)
+				isCircular = isCircular || g.add(f.Type, parent, f.Name, false, "")
 			}
 		}
 
@@ -272,6 +313,8 @@ func (g *Generator) add(typ reflect.Type, parent reflect.Type) bool {
 	default:
 		return false
 	}
+
+	return true
 }
 
 func hasInterface(u reflect.Type, typ reflect.Type) bool {
@@ -360,7 +403,17 @@ func (g *Generator) declarations(jsDoc bool) string {
 		if jsDoc {
 			sb.WriteString("/** @typedef {")
 		} else {
-			sb.WriteString(fmt.Sprintf("interface %s ", decl.Name))
+			if g.export {
+				sb.WriteString("export ")
+			}
+			if decl.IsFunction {
+				if g.async[decl.Name] {
+					sb.WriteString("async ")
+				}
+				sb.WriteString(fmt.Sprintf("function %s", decl.Name))
+			} else {
+				sb.WriteString(fmt.Sprintf("interface %s ", decl.Name))
+			}
 		}
 
 		sb.WriteString(decl.Type)
@@ -375,6 +428,59 @@ func (g *Generator) declarations(jsDoc bool) string {
 	}
 
 	return sb.String()
+}
+
+func (g *Generator) writeFuncDecl(sb *strings.Builder, typ reflect.Type, async bool, implementation string) {
+	sb.WriteString("(")
+	for i := 0; i < typ.NumIn(); i++ {
+		arg := typ.In(i)
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(fmt.Sprintf("arg%d: %s", i, g.typeOf(arg, false)))
+	}
+	sb.WriteString("): ")
+
+	outTypes := make([]reflect.Type, 0, typ.NumOut())
+	for i := 0; i < typ.NumOut(); i++ {
+		out := typ.Out(i)
+		if out != typeOfError {
+			outTypes = append(outTypes, out)
+		}
+	}
+
+	if async {
+		sb.WriteString("Promise<")
+	}
+
+	if len(outTypes) == 0 {
+		sb.WriteString("void")
+	} else if len(outTypes) > 1 {
+		sb.WriteString("(")
+	}
+
+	for i, out := range outTypes {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(g.typeOf(out, false))
+
+	}
+
+	if len(outTypes) > 1 {
+		sb.WriteString(")")
+	}
+
+	if async {
+		sb.WriteString(">")
+	}
+
+	if implementation != "" {
+		sb.WriteString("{\n")
+		sb.WriteString(implementation)
+		sb.WriteString("\n}")
+	}
+
 }
 
 func (g *Generator) writeStructDecl(sb *strings.Builder, typ reflect.Type) {
@@ -403,8 +509,16 @@ func (g *Generator) writeStructFields(sb *strings.Builder, typ reflect.Type) {
 }
 
 func hasTagOmit(f reflect.StructField) bool {
-	if tag, ok := f.Tag.Lookup("json"); ok && tag == "-" {
+	jsonTagFound := false
+	var tag string
+	if tag, jsonTagFound = f.Tag.Lookup("json"); jsonTagFound && tag == "-" {
 		return true
+	}
+
+	if !jsonTagFound {
+		if tag, ok := f.Tag.Lookup("yaml"); ok && tag == "-" {
+			return true
+		}
 	}
 
 	return false
@@ -415,7 +529,17 @@ func (g *Generator) structField(f reflect.StructField) string {
 	omit := false
 
 	var typ string
-	if tag, ok := f.Tag.Lookup("json"); ok {
+	var tag string
+
+	if jsonTag, ok := f.Tag.Lookup("json"); ok {
+		tag = jsonTag
+	}
+
+	if yamlTag, ok := f.Tag.Lookup("yaml"); ok && tag == "" {
+		tag = yamlTag
+	}
+
+	if tag != "" {
 		if !strings.ContainsRune(tag, ',') {
 			name = tag
 		} else {
