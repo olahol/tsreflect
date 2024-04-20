@@ -78,6 +78,7 @@ type Generator struct {
 	warnings bool
 	warn     func(string, ...any)
 	namer    Namer
+	export   bool
 
 	typers   map[reflect.Type]Typer
 	types    map[reflect.Type]struct{}
@@ -121,6 +122,13 @@ func WithNoWarnings() Option {
 func WithTyper(typ reflect.Type, typer Typer) Option {
 	return func(g *Generator) {
 		g.typers[typ] = typer
+	}
+}
+
+// ExportEverything adds an option that makes export all generated types
+func ExportEverything() Option {
+	return func(g *Generator) {
+		g.export = true
 	}
 }
 
@@ -396,6 +404,9 @@ func (g *Generator) declarations(jsDoc bool) string {
 		if jsDoc {
 			sb.WriteString("/** @typedef {")
 		} else {
+			if g.export {
+				sb.WriteString("export ")
+			}
 			if decl.IsFunction {
 				if g.async[decl.Name] {
 					sb.WriteString("async ")
