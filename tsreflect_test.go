@@ -412,6 +412,17 @@ func TestStructs(t *testing.T) {
 		AssertNoError(t, typecheckValue(f))
 	})
 
+	t.Run("omitzero struct tags", func(t *testing.T) {
+		type S1 struct {
+			A int       `json:"a"`
+			B time.Time `json:"b,omitzero"`
+		}
+
+		var x S1
+
+		AssertNoError(t, typecheckValue(x))
+	})
+
 	t.Run("struct name collision", func(t *testing.T) {
 		g := New()
 

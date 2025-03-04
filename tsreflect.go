@@ -427,7 +427,7 @@ func (g *Generator) structField(f reflect.StructField) string {
 			switch parts[1] {
 			case "string":
 				typ = "string"
-			case "omitempty":
+			case "omitempty", "omitzero":
 				omit = true
 			}
 		}
