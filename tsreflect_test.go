@@ -18,18 +18,24 @@ import (
 var isDebug = os.Getenv("DEBUG") != ""
 
 func AssertNoError(t *testing.T, err error) {
+	t.Helper()
+
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func AssertError(t *testing.T, err error) {
+	t.Helper()
+
 	if err == nil {
 		t.Error(errors.New("should be error"))
 	}
 }
 
 func AssertEqual[T comparable](t *testing.T, a, b T) {
+	t.Helper()
+
 	if a != b {
 		t.Error(fmt.Errorf("%v != %v", a, b))
 	}
