@@ -100,6 +100,8 @@ func typecheckValue[T any](v T, os ...Option) error {
 }
 
 func TestBool(t *testing.T) {
+	t.Parallel()
+
 	t.Run("bool", func(t *testing.T) {
 		x := true
 
@@ -108,6 +110,8 @@ func TestBool(t *testing.T) {
 }
 
 func TestInterface(t *testing.T) {
+	t.Parallel()
+
 	t.Run("reflect.Interface", func(t *testing.T) {
 		type S struct {
 			A interface{}
@@ -126,6 +130,8 @@ func TestInterface(t *testing.T) {
 }
 
 func TestNumbers(t *testing.T) {
+	t.Parallel()
+
 	t.Run("int", func(t *testing.T) {
 		x := 99
 
@@ -146,6 +152,8 @@ func TestNumbers(t *testing.T) {
 }
 
 func TestStrings(t *testing.T) {
+	t.Parallel()
+
 	t.Run("string", func(t *testing.T) {
 		x := "test"
 
@@ -154,6 +162,8 @@ func TestStrings(t *testing.T) {
 }
 
 func TestPointers(t *testing.T) {
+	t.Parallel()
+
 	t.Run("nil pointer", func(t *testing.T) {
 		var x *int
 
@@ -168,6 +178,8 @@ func TestPointers(t *testing.T) {
 	})
 }
 func TestArrays(t *testing.T) {
+	t.Parallel()
+
 	t.Run("array", func(t *testing.T) {
 		var x [9]int
 
@@ -176,6 +188,8 @@ func TestArrays(t *testing.T) {
 }
 
 func TestSlices(t *testing.T) {
+	t.Parallel()
+
 	t.Run("nil slice", func(t *testing.T) {
 		var x []int
 
@@ -190,6 +204,8 @@ func TestSlices(t *testing.T) {
 }
 
 func TestMaps(t *testing.T) {
+	t.Parallel()
+
 	t.Run("nil map", func(t *testing.T) {
 		var x map[int]int
 
@@ -206,6 +222,8 @@ func TestMaps(t *testing.T) {
 }
 
 func TestStructs(t *testing.T) {
+	t.Parallel()
+
 	t.Run("anonymous struct", func(t *testing.T) {
 		var x struct {
 			A string
@@ -483,6 +501,8 @@ func TestStructs(t *testing.T) {
 }
 
 func TestUnsupported(t *testing.T) {
+	t.Parallel()
+
 	t.Run("complex64", func(t *testing.T) {
 		x := complex64(10 + 20i)
 
@@ -554,6 +574,8 @@ func (s Base32Slice) TypeScriptType(*Generator, bool) string {
 }
 
 func TestCustomTypes(t *testing.T) {
+	t.Parallel()
+
 	t.Run("union", func(t *testing.T) {
 		var x StringUnion
 
@@ -602,6 +624,8 @@ func TestCustomTypes(t *testing.T) {
 }
 
 func TestBuiltin(t *testing.T) {
+	t.Parallel()
+
 	t.Run("rune", func(t *testing.T) {
 		//x := '⌘'
 		//x := []rune{'a', 'b', 'c'}
@@ -638,6 +662,8 @@ func (Marshaled) MarshalJSON() ([]byte, error) {
 }
 
 func TestWarning(t *testing.T) {
+	t.Parallel()
+
 	t.Run("should warn of missing typer", func(t *testing.T) {
 		var x Marshaled
 
@@ -674,6 +700,8 @@ func TestWarning(t *testing.T) {
 }
 
 func TestNamer(t *testing.T) {
+	t.Parallel()
+
 	t.Run("camel case", func(t *testing.T) {
 		AssertEqual(t, pascalCase("domain.name"), "DomainName")
 		AssertEqual(t, pascalCase("snake_case"), "SnakeCase")
@@ -701,6 +729,8 @@ func TestNamer(t *testing.T) {
 }
 
 func TestCoverage(t *testing.T) {
+	t.Parallel()
+
 	t.Run("optional byte slice", func(t *testing.T) {
 		type S struct {
 			A []byte `json:",omitempty"`
@@ -792,6 +822,8 @@ func (Date) TypeScriptType(g *Generator, optional bool) string {
 }
 
 func TestBugs(t *testing.T) {
+	t.Parallel()
+
 	t.Run("omitted fields should not create semicolons", func(t *testing.T) {
 		type S struct {
 			A bool `json:"-"`
